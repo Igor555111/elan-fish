@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>ЕланьРыбалка — Вести с водоёмов</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- API Яндекс.Карт 2.1 -->
+  <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU" type="text/javascript"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      display: none;
+    }
+    .custom-scroll {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Блокировка рекламы хостингов */
+    #tiiny-host-banner,
+    div[id*="tiiny"],
+    div[class*="tiiny"],
+    div[style*="z-index: 2147483647"],
+    div[style*="z-index: 9999999"],
+    footer[style*="position: fixed"],
+    iframe[src*="tiiny"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      height: 0 !important;
+      max-height: 0 !important;
+      overflow: hidden !important;
+    }
+
+    /* Нижняя панель поверх всех элементов */
+    nav.bottom-nav {
+      position: fixed !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      z-index: 999999 !important;
+      padding-bottom: max(env(safe-area-inset-bottom), 10px) !important;
+    }
+
+    .ymaps-balloon-content {
+      padding: 6px !important;
+      color: #0f172a !important;
+      font-size: 13px !important;
+      line-height: 1.4 !important;
+    }
+  
+    /* Жесткое подавление любых баннеров хостинга tiiny */
+    #tiiny-host-banner,
+    #tiiny-banner,
+    div[id*="tiiny"],
+    div[class*="tiiny"],
+    iframe[id*="tiiny"],
+    iframe[src*="tiiny"],
+    div[style*="z-index: 2147483647"],
+    div[style*="z-index: 9999999"],
+    div[style*="background: linear-gradient"],
+    div[style*="background-image: linear-gradient"],
+    footer[style*="position: fixed"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      height: 0px !important;
+      max-height: 0px !important;
+      width: 0px !important;
+      overflow: hidden !important;
+      position: absolute !important;
+      bottom: -9999px !important;
+      left: -9999px !important;
+    }
+  </style>
+  <script>
+    // Агрессивный автокиллер баннера tiiny.host каждые 50мс
+    function killTiinyBanner() {
+      // 1. Поиск по тексту и классам
+      document.querySelectorAll('div, footer, section, iframe').forEach(el => {
+        if (el.closest('nav') || el.closest('header') || el.closest('#yandex-map')) return;
+        const text = (el.innerText || el.textContent || '').toLowerCase();
+        if (text.includes('tiiny.host') || text.includes('upload for free') || text.includes('shared with')) {
+          el.remove();
+        }
+      });
+      // 2. Поиск по селекторам
+      const badSelectors = [
+        '#tiiny-host-banner', '#tiiny-banner', '[id*="tiiny"]', '[class*="tiiny"]',
+        'div[style*="2147483647"]', 'div[style*="9999999"]', 'iframe[src*="tiiny"]'
+      ];
+      badSelectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          if (!el.closest('nav') && !el.closest('header') && !el.closest('#yandex-map')) {
+            el.remove();
+          }
+        });
+      });
+    }
+    setInterval(killTiinyBanner, 100);
+    window.addEventListener('DOMContentLoaded', killTiinyBanner);
+    window.addEventListener('load', killTiinyBanner);
+  </script>
+
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased pb-28">
+
+  <!-- Шапка -->
+  <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-2">
+      <div class="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+        <i class="fa-solid fa-fish text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-base font-bold leading-tight flex items-center gap-1.5">
+          ЕланьРыбалка
+          <span class="text-[10px] bg-red-500/20 text-red-300 font-semibold px-1.5 py-0.5 rounded border border-red-500/30 flex items-center gap-1">
+            <i class="fa-brands fa-yandex"></i> Карты
+          </span>
+        </h1>
+        <p class="text-xs text-slate-400">Терса, Елань и пруды района</p>
+      </div>
+    </div>
+    <div id="tg-user-badge" class="flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-2.5 py-1.5 rounded-full text-xs text-slate-300">
+      <i class="fa-solid fa-user-circle text-emerald-400"></i>
+      <span id="tg-username">Рыбак</span>
+    </div>
+  </header>
+
+  <!-- Контент вкладок -->
+  <main class="max-w-lg mx-auto p-4 space-y-4">
+
+    <!-- Вкладка: Вести (Лента) -->
+    <section id="tab-feed" class="space-y-4">
+      <div class="flex gap-2 overflow-x-auto custom-scroll pb-1">
+        <button onclick="filterPosts('all')" class="chip-filter active whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-600 text-white">Все водоёмы</button>
+        <button onclick="filterPosts('Терса')" class="chip-filter whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">р. Терса</button>
+        <button onclick="filterPosts('Елань')" class="chip-filter whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">р. Елань</button>
+        <button onclick="filterPosts('Вязовка')" class="chip-filter whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">Вязовский пруд</button>
+        <button onclick="filterPosts('Старицы')" class="chip-filter whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">Старицы</button>
+      </div>
+
+      <button onclick="openModal('report-modal')" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium rounded-xl shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 active:scale-98 transition">
+        <i class="fa-solid fa-camera"></i>
+        <span>Добавить отчёт с рыбалки</span>
+      </button>
+
+      <div id="posts-container" class="space-y-4"></div>
+    </section>
+
+    <!-- Вкладка: Карта (Чистая Яндекс.Карта без шаблонных меток) -->
+    <section id="tab-map" class="space-y-3 hidden">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-semibold text-slate-200">Яндекс.Карта района</span>
+          <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">GPS Активен</span>
+        </div>
+        <button onclick="locateUserOnYandexMap()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-lg text-xs font-medium text-emerald-400 flex items-center gap-1.5 active:scale-95 transition">
+          <i class="fa-solid fa-crosshairs"></i>
+          <span>Где я</span>
+        </button>
+      </div>
+
+      <!-- Контейнер для Яндекс.Карт -->
+      <div class="relative w-full h-[470px] rounded-2xl overflow-hidden border border-slate-800 shadow-inner">
+        <div id="yandex-map" class="w-full h-full"></div>
+      </div>
+
+      <div class="p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-400 space-y-1">
+        <div class="font-medium text-slate-200 flex items-center justify-between">
+          <span>Спутниковая топография Еланского района</span>
+          <i class="fa-solid fa-map-pin text-emerald-450"></i>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          Нажмите на любую точку водоёма или берега, чтобы узнать её точные координаты для отчёта. Кнопка «Где я» покажет ваше местоположение на реке по GPS.
+        </p>
+      </div>
+    </section>
+
+    <!-- Вкладка: Клёв & Вода -->
+    <section id="tab-hydro" class="space-y-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <h2 class="text-sm font-semibold text-slate-200 mb-3 flex items-center justify-between">
+          <span>Сводка по уровню воды</span>
+          <span class="text-xs font-normal text-emerald-400">Елань, Терса</span>
+        </h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800">
+            <div class="text-xs text-slate-400 mb-1">р. Терса (створ р.п. Елань)</div>
+            <div class="text-lg font-bold text-slate-100 flex items-center gap-1">
+              +14 см <i class="fa-solid fa-arrow-trend-up text-amber-400 text-xs"></i>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-1">Прозрачность: средняя</div>
+          </div>
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800">
+            <div class="text-xs text-slate-400 mb-1">р. Елань (устье)</div>
+            <div class="text-lg font-bold text-slate-100 flex items-center gap-1">
+              В норме <i class="fa-solid fa-minus text-emerald-400 text-xs"></i>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-1">Прозрачность: чистая</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <h2 class="text-sm font-semibold text-slate-200 mb-3">Прогноз активности клёва</h2>
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Судак / Берш (джиг, Терса)</span>
+              <span class="text-emerald-400 font-semibold">85% — Жор</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div class="bg-emerald-500 h-full rounded-full" style="width: 85%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Щука (старицы, коряжник)</span>
+              <span class="text-emerald-400 font-semibold">70% — Хорошо</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div class="bg-emerald-500 h-full rounded-full" style="width: 70%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Голавль (перекаты Елани)</span>
+              <span class="text-amber-400 font-semibold">50% — Умеренно</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div class="bg-amber-500 h-full rounded-full" style="width: 50%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Вкладка: Барахолка -->
+    <section id="tab-market" class="space-y-4 hidden">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-300">Барахолка снастей & напарники</h2>
+        <button onclick="openModal('market-modal')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium">
+          + Подать
+        </button>
+      </div>
+      <div id="market-container" class="space-y-3"></div>
+    </section>
+
+    <!-- Вкладка: Правила -->
+    <section id="tab-rules" class="space-y-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <h2 class="text-sm font-semibold text-emerald-400 flex items-center gap-2">
+          <i class="fa-solid fa-scale-balanced"></i> Нормы вылова (Волгоградская обл.)
+        </h2>
+        <ul class="text-xs text-slate-300 space-y-2 leading-relaxed">
+          <li>• <strong>Суточная норма:</strong> не более 10 кг всех видов рыбы суммарно на 1 человека.</li>
+          <li>• <strong>Судак:</strong> минимум 40 см (не более 2 шт).</li>
+          <li>• <strong>Щука:</strong> минимум 32 см.</li>
+          <li>• <strong>Сом:</strong> минимум 90 см.</li>
+          <li>• <strong>Голавль:</strong> минимум 28 см.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <!-- Навигация снизу -->
+  <nav class="bottom-nav bg-slate-900/95 backdrop-blur border-t border-slate-800 max-w-lg mx-auto">
+    <div class="grid grid-cols-5 py-2 px-1 text-center">
+      <button onclick="switchTab('feed')" id="nav-feed" class="flex flex-col items-center justify-center gap-1 text-emerald-400">
+        <i class="fa-solid fa-newspaper text-lg"></i>
+        <span class="text-[10px] font-medium">Вести</span>
+      </button>
+      <button onclick="switchTab('map')" id="nav-map" class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-200">
+        <i class="fa-solid fa-map-location-dot text-lg"></i>
+        <span class="text-[10px] font-medium">Карта</span>
+      </button>
+      <button onclick="switchTab('hydro')" id="nav-hydro" class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-200">
+        <i class="fa-solid fa-water text-lg"></i>
+        <span class="text-[10px] font-medium">Клёв & Вода</span>
+      </button>
+      <button onclick="switchTab('market')" id="nav-market" class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-200">
+        <i class="fa-solid fa-tag text-lg"></i>
+        <span class="text-[10px] font-medium">Барахолка</span>
+      </button>
+      <button onclick="switchTab('rules')" id="nav-rules" class="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-200">
+        <i class="fa-solid fa-book-bookmark text-lg"></i>
+        <span class="text-[10px] font-medium">Правила</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Модальное окно: Отчет -->
+  <div id="report-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-5 space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-slate-100">Новый отчёт о рыбалке</h3>
+        <button onclick="closeModal('report-modal')" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <form id="report-form" onsubmit="submitReport(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Водоём</label>
+          <select id="rep-water" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-100 focus:border-emerald-500 outline-none">
+            <option value="Терса">р. Терса (Еланский район)</option>
+            <option value="Елань">р. Елань</option>
+            <option value="Вязовка">Вязовский пруд</option>
+            <option value="Старицы">Старицы и заводи</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Трофей / Улов</label>
+          <input type="text" id="rep-catch" placeholder="Судак 2.4 кг, щука, окуни" required class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-100 focus:border-emerald-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Приманка и проводка</label>
+          <textarea id="rep-bait" rows="2" placeholder="Джиг 14г, виброхвост 3.5 машинное масло, яма 4м" required class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-100 focus:border-emerald-500 outline-none"></textarea>
+        </div>
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="rep-hide-coords" class="rounded bg-slate-950 border-slate-800 text-emerald-600 focus:ring-0">
+          <label for="rep-hide-coords" class="text-xs text-slate-300">Скрыть точную точку</label>
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg text-sm transition">
+          Опубликовать
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно: Объявление -->
+  <div id="market-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-5 space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-slate-100">Подать объявление</h3>
+        <button onclick="closeModal('market-modal')" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <form id="market-form" onsubmit="submitMarket(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Товар / Снасть / Запрос</label>
+          <input type="text" id="mkt-title" placeholder="Спиннинг Favorite или Попутчик на Терсу" required class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-100 focus:border-emerald-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Цена</label>
+          <input type="text" id="mkt-price" placeholder="3 500 ₽ или Бензин пополам" required class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-100 focus:border-emerald-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Контакты</label>
+          <input type="text" id="mkt-contact" placeholder="@рыбак_елань или +7 999 000-00-00" required class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-100 focus:border-emerald-500 outline-none">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg text-sm transition">
+          Разместить
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Подавление рекламных блоков
+    const bannerKiller = new MutationObserver(() => {
+      const selectors = ['#tiiny-host-banner', '[id*="tiiny"]', '[class*="tiiny"]', 'footer[style*="fixed"]'];
+      selectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          if (!el.closest('nav') && !el.closest('header') && !el.closest('#yandex-map')) {
+            el.remove();
+          }
+        });
+      });
+    });
+    bannerKiller.observe(document.documentElement, { childList: true, subtree: true });
+
+    // Telegram WebApp
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.expand();
+      tg.ready();
+      if (tg.initDataUnsafe?.user) {
+        const u = tg.initDataUnsafe.user;
+        document.getElementById('tg-username').innerText = u.first_name || u.username || 'Рыбак';
+      }
+    }
+
+    let posts = [
+      {
+        id: 1,
+        author: "Алексей В.",
+        water: "Терса",
+        spot: "Около Большого Моста",
+        catch: "Судак 2.3 кг, два берша",
+        bait: "Мандула билайн, ступенька с паузой 3 сек",
+        road: "Проедет пузотёрка",
+        time: "Сегодня в 06:40",
+        likes: 12
+      },
+      {
+        id: 2,
+        author: "Михаил (Елань)",
+        water: "Елань",
+        spot: "Перекат за садами",
+        catch: "Голавль 1.1 кг, окуни",
+        bait: "Воблер чабик 38 под жука",
+        road: "Грунтовка подсохла",
+        time: "Вчера в 18:20",
+        likes: 8
+      },
+      {
+        id: 3,
+        author: "Сергей К.",
+        water: "Вязовка",
+        spot: "Верхняя запруда",
+        catch: "Карась 400-600г (садок 5 кг)",
+        bait: "Опарыш + чесночная болтушка",
+        road: "После вчерашнего дождя скользко, 4x4",
+        time: "Вчера в 11:00",
+        likes: 15
+      }
+    ];
+
+    let marketItems = [
+      { id: 1, title: "Спиннинг Favorite Blue Bird 1-7g", price: "3 200 ₽", contact: "@miha_elan", date: "Сегодня" },
+      { id: 2, title: "Лодка ПВХ 280 под мотор", price: "12 000 ₽", contact: "+7 904 771-xx-xx", date: "Вчера" },
+      { id: 3, title: "Ищу напарника на Терсу в субботу", price: "Бензин 50/50", contact: "@alex_fish34", date: "Вчера" }
+    ];
+
+    function renderPosts(filtered = posts) {
+      const c = document.getElementById('posts-container');
+      c.innerHTML = filtered.map(p => `
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-emerald-400 font-bold text-xs border border-slate-700">
+                ${p.author.substring(0, 1)}
+              </div>
+              <div>
+                <div class="text-xs font-semibold text-slate-200">${p.author}</div>
+                <div class="text-[10px] text-slate-400">${p.time} • <span class="text-emerald-400 font-medium">р. ${p.water}</span></div>
+              </div>
+            </div>
+            <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full border border-slate-700">${p.road}</span>
+          </div>
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-1">
+            <div class="text-xs font-semibold text-slate-100 flex items-center gap-1.5">
+              <i class="fa-solid fa-trophy text-amber-400"></i> ${p.catch}
+            </div>
+            <div class="text-xs text-slate-300"><strong>Снасть:</strong> ${p.bait}</div>
+          </div>
+          <div class="flex justify-between items-center text-xs text-slate-400 pt-1 border-t border-slate-800/80">
+            <span class="text-[11px]"><i class="fa-solid fa-location-dot text-slate-500"></i> ${p.spot}</span>
+            <button onclick="likePost(${p.id})" class="flex items-center gap-1.5 hover:text-rose-400 transition">
+              <i class="fa-regular fa-heart"></i> <span>${p.likes}</span>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderMarket() {
+      const c = document.getElementById('market-container');
+      c.innerHTML = marketItems.map(m => `
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold text-slate-200">${m.title}</div>
+            <div class="text-[11px] text-emerald-400 font-bold mt-0.5">${m.price}</div>
+            <div class="text-[10px] text-slate-400 mt-1">Связь: <span class="text-slate-200">${m.contact}</span></div>
+          </div>
+          <span class="text-[10px] text-slate-500">${m.date}</span>
+        </div>
+      `).join('');
+    }
+
+    function switchTab(tab) {
+      if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+      ['feed', 'map', 'hydro', 'market', 'rules'].forEach(t => {
+        document.getElementById('tab-' + t).classList.add('hidden');
+        const btn = document.getElementById('nav-' + t);
+        btn.classList.remove('text-emerald-400');
+        btn.classList.add('text-slate-400');
+      });
+      document.getElementById('tab-' + tab).classList.remove('hidden');
+      const activeBtn = document.getElementById('nav-' + tab);
+      activeBtn.classList.remove('text-slate-400');
+      activeBtn.classList.add('text-emerald-400');
+
+      if (tab === 'map') {
+        setTimeout(() => { initYandexMap(); }, 200);
+      }
+    }
+
+    function filterPosts(w) {
+      document.querySelectorAll('.chip-filter').forEach(c => {
+        c.classList.remove('bg-emerald-600', 'text-white');
+        c.classList.add('bg-slate-800', 'text-slate-300');
+      });
+      event.target.classList.add('bg-emerald-600', 'text-white');
+      event.target.classList.remove('bg-slate-800', 'text-slate-300');
+
+      if (w === 'all') renderPosts();
+      else renderPosts(posts.filter(p => p.water.toLowerCase().includes(w.toLowerCase())));
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function submitReport(e) {
+      e.preventDefault();
+      const newPost = {
+        id: Date.now(),
+        author: document.getElementById('tg-username').innerText || "Рыбак",
+        water: document.getElementById('rep-water').value,
+        spot: document.getElementById('rep-hide-coords').checked ? "Точка скрыта автором" : "Еланский район",
+        catch: document.getElementById('rep-catch').value,
+        bait: document.getElementById('rep-bait').value,
+        road: "Проверено сегодня",
+        time: "Только что",
+        likes: 1
+      };
+      posts.unshift(newPost);
+      renderPosts();
+      closeModal('report-modal');
+      e.target.reset();
+      if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    }
+
+    function submitMarket(e) {
+      e.preventDefault();
+      const item = {
+        id: Date.now(),
+        title: document.getElementById('mkt-title').value,
+        price: document.getElementById('mkt-price').value,
+        contact: document.getElementById('mkt-contact').value,
+        date: "Только что"
+      };
+      marketItems.unshift(item);
+      renderMarket();
+      closeModal('market-modal');
+      e.target.reset();
+      if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+    }
+
+    function likePost(id) {
+      const p = posts.find(x => x.id === id);
+      if (p) {
+        p.likes++;
+        renderPosts();
+        if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+      }
+    }
+
+    // -------------------------------------------------------------
+    // ЧИСТАЯ ЯНДЕКС.КАРТА 2.1 (БЕЗ ДЕМО-МЕТОК)
+    // -------------------------------------------------------------
+    let yMap = null;
+    let userPlacemark = null;
+
+    function initYandexMap() {
+      if (yMap) {
+        yMap.container.fitToViewport();
+        return;
+      }
+
+      if (typeof ymaps === 'undefined') {
+        console.error('Яндекс Карты не загрузились');
+        return;
+      }
+
+      ymaps.ready(() => {
+        // Центр — р.п. Елань, реки Терса и Елань
+        const elanCenter = [50.9458, 42.4286];
+
+        yMap = new ymaps.Map('yandex-map', {
+          center: elanCenter,
+          zoom: 13,
+          type: 'yandex#hybrid', // Спутник высокого разрешения с подписями рек и дорог
+          controls: ['zoomControl', 'typeSelector', 'fullscreenControl']
+        });
+
+        // Клик по карте — определяет точные координаты точки
+        yMap.events.add('click', (e) => {
+          const coords = e.get('coords');
+          yMap.balloon.open(coords, {
+            contentHeader: 'Точка на водоёме',
+            contentBody: `Координаты: <b>${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}</b><br><small class="text-slate-500">Нажмите и скопируйте для отчёта</small>`
+          });
+        });
+
+        yMap.container.fitToViewport();
+      });
+    }
+
+    // Определение собственного местоположения через GPS
+    function locateUserOnYandexMap() {
+      if (!navigator.geolocation) {
+        alert('Геолокация не поддерживается вашим устройством');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const userCoords = [position.coords.latitude, position.coords.longitude];
+          if (yMap) {
+            if (userPlacemark) {
+              userPlacemark.geometry.setCoordinates(userCoords);
+            } else {
+              userPlacemark = new ymaps.Placemark(userCoords, {
+                hintContent: 'Вы находитесь здесь',
+                balloonContent: 'Ваша текущая геопозиция на берегу'
+              }, {
+                preset: 'islands#geolocationIcon'
+              });
+              yMap.geoObjects.add(userPlacemark);
+            }
+            yMap.setCenter(userCoords, 14, { checkZoomRange: true });
+          }
+        },
+        (error) => {
+          alert('Не удалось определить координаты. Включите геолокацию на смартфоне.');
+        },
+        { enableHighAccuracy: true }
+      );
+    }
+
+    renderPosts();
+    renderMarket();
+  </script>
+</body>
+</html>
