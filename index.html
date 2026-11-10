@@ -31,6 +31,7 @@
       flex-direction: column;
       height: 100%;
       width: 100%;
+      position: relative;
     }
     header {
       background: #222222;
@@ -71,6 +72,86 @@
       width: 100%;
       height: 100%;
       z-index: 1;
+    }
+
+    /* Панель фильтров и списка внизу */
+    #bottomPanel {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(26, 26, 27, 0.95);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid #38383a;
+      z-index: 999;
+      padding: 10px 14px;
+      max-height: 220px;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.3s ease;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .filter-tabs {
+      display: flex;
+      gap: 4px;
+    }
+    .tab-btn {
+      background: #2b2b2e;
+      color: #aaa;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #2688eb;
+      color: #fff;
+    }
+    .spots-scroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .spot-chip {
+      background: #242426;
+      border: 1px solid #3a3a3d;
+      border-radius: 8px;
+      padding: 8px 10px;
+      min-width: 170px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .spot-chip:hover {
+      border-color: #2688eb;
+    }
+    .spot-chip-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .spot-chip-desc {
+      font-size: 11px;
+      color: #4bb34b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* Карточки Leaflet */
@@ -203,9 +284,6 @@
       resize: vertical;
       min-height: 55px;
     }
-    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-      border-color: #2688eb;
-    }
     .btn-submit {
       width: 100%;
       padding: 10px;
@@ -219,26 +297,12 @@
       margin-top: 6px;
     }
 
-    /* Список отчетов */
-    .report-item {
-      background: #1a1a1b;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 8px;
-      border: 1px solid #2f2f32;
-    }
-    .report-item h4 {
-      color: #ff9e00;
-      font-size: 14px;
-      margin-bottom: 4px;
-    }
-
     /* Уведомление Toast */
     #toast {
       position: fixed;
-      bottom: 24px;
+      top: 55px;
       left: 50%;
-      transform: translateX(-50%) translateY(100px);
+      transform: translateX(-50%) translateY(-20px);
       background: rgba(0, 0, 0, 0.9);
       color: #fff;
       padding: 10px 18px;
@@ -266,7 +330,21 @@
         <button class="top-btn" onclick="openReportModal()">+ Добавить</button>
       </div>
     </header>
+
     <div id="map"></div>
+
+    <!-- Нижняя быстрая панель выбора водоема -->
+    <div id="bottomPanel">
+      <div class="panel-header">
+        <span class="panel-title">Водоемы района:</span>
+        <div class="filter-tabs">
+          <button class="tab-btn active" onclick="filterSpots('all', this)">Все</button>
+          <button class="tab-btn" onclick="filterSpots('Еланский р-н', this)">Елань</button>
+          <button class="tab-btn" onclick="filterSpots('Руднянский р-н', this)">Рудня</button>
+        </div>
+      </div>
+      <div class="spots-scroll" id="spotsList"></div>
+    </div>
   </div>
 
   <!-- Модальное окно создания отчета -->
@@ -355,7 +433,6 @@
       vkBridge.send('VKWebAppInit');
     }
 
-    // 2. Toast
     function showToast(text) {
       const toast = document.getElementById('toast');
       toast.innerText = text;
@@ -363,113 +440,115 @@
       setTimeout(() => toast.classList.remove('show'), 2200);
     }
 
-    // 3. Копирование координат
     window.copyCoords = function(lat, lng) {
       const text = `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(() => {
-          showToast(`Скопировано: ${text}`);
-        }).catch(() => fallbackCopy(text));
+        navigator.clipboard.writeText(text).then(() => showToast(`Скопировано: ${text}`));
       } else {
-        fallbackCopy(text);
+        prompt('Скопируйте координаты:', text);
       }
     };
 
-    function fallbackCopy(text) {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        showToast(`Скопировано: ${text}`);
-      } catch (err) {
-        prompt('Скопируйте координаты вручную:', text);
-      }
-      document.body.removeChild(textarea);
-    }
-
-    // 4. Карта Leaflet
-    const map = L.map('map').setView([50.86, 43.30], 9);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // 2. Слой карт: Спутник + Схема с переключателем
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 18,
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
-
-    const reportIcon = new L.Icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
+      attribution: 'Esri World Imagery'
     });
 
-    // 5. Базовые водоемы районов
+    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: 'OpenStreetMap'
+    });
+
+    // Центр сразу между Еланью и Рудней с оптимальным приближением
+    const map = L.map('map', {
+      center: [50.88, 43.30],
+      zoom: 10,
+      layers: [satelliteLayer] // По умолчанию спутник
+    });
+
+    // Контрол переключения слоёв
+    const baseMaps = {
+      "🛰️ Спутник": satelliteLayer,
+      "🗺️ Схема": streetLayer
+    };
+    L.control.layers(baseMaps).addTo(map);
+
+    // 3. Базовые водоёмы
     const defaultSpots = [
       {
+        id: 1,
         name: "Слияние р. Елань и р. Терса",
         district: "Еланский р-н",
         coords: [50.9392, 42.0628],
-        fish: "Щука, судак, голавль, окунь, лещ",
-        type: "Река / перекаты и ямы",
+        fish: "Щука, судак, голавль, лещ",
         road: "🚗 Асфальт / щебень (в черте поселка)",
-        shore: "🎣 Есть пологие подходы и мостки",
-        boat: "🛶 Спуск ПВХ с песчаной косы"
+        shore: "🎣 Есть пологие подходы",
+        boat: "🛶 Спуск ПВХ с косы"
       },
       {
+        id: 2,
         name: "Река Терса у с. Вязовка",
         district: "Еланский р-н",
         coords: [50.8495, 42.2741],
-        fish: "Щука, жерех, голавль, язь, окунь",
-        type: "Река / омуты, коряжник",
+        fish: "Щука, голавль, жерех, окунь",
         road: "🌾 Грунтовка (после дождя вязко)",
-        shore: "🌿 Местами крутояры, прогалы в кустах",
+        shore: "🌿 Омуты, прогалы в кустах",
         boat: "🛶 Спуск лодки на руках"
       },
       {
+        id: 3,
         name: "Большеморецкий пруд",
         district: "Еланский р-н",
         coords: [50.9015, 42.3412],
         fish: "Карась, карп, окунь",
-        type: "Степной балочный пруд",
         road: "🌾 Полевая грунтовка",
-        shore: "🌿 Прогалы в камыше, плотина",
-        boat: "❌ Мелководный берег / заросший"
+        shore: "🌿 Прогалы в камыше",
+        boat: "❌ Заросший берег"
       },
       {
-        name: "Устье Терсы (впадение в Медведицу)",
+        id: 4,
+        name: "Пруд у х. Тростянка",
+        district: "Еланский р-н",
+        coords: [50.9983, 41.9754],
+        fish: "Карась, карп, линь",
+        road: "🌾 Грунтовка",
+        shore: "🎣 Удобный пологий берег",
+        boat: "🛶 Спуск ПВХ"
+      },
+      {
+        id: 5,
+        name: "Устье Терсы (р. Медведица)",
         district: "Руднянский р-н",
         coords: [50.7925, 44.5480],
-        fish: "Сом, судак, сазан, щука, жерех",
-        type: "Слияние рек / Рудня",
-        road: "🚗 Подъезд нормальный по окраине Рудни",
-        shore: "🎣 Песчаные косы и обрывы",
+        fish: "Сом, судак, сазан, щука",
+        road: "🚗 Нормальный подъезд",
+        shore: "🎣 Песчаные косы и ямы",
         boat: "🚤 Есть места для съезда лодки"
       },
       {
-        name: "Река Медведица у с. Лемешкино",
+        id: 6,
+        name: "Река Медведица (Лемешкино)",
         district: "Руднянский р-н",
         coords: [50.8932, 44.4921],
-        fish: "Голавль, жерех, щука, судак",
-        type: "Река / перекаты",
-        road: "🌾 Твердая грунтовка вдоль поймы",
-        shore: "🎣 Удобный перекат, пляжи",
-        boat: "🛶 Спуск на руках (ПВХ)"
+        fish: "Голавль, жерех, щука",
+        road: "🌾 Твердая грунтовка",
+        shore: "🎣 Перекат, песчаные пляжи",
+        boat: "🛶 Спуск на руках"
       },
       {
+        id: 7,
         name: "Пруд у с. Осички",
         district: "Руднянский р-н",
         coords: [50.6415, 44.4830],
         fish: "Карп, карась, толстолобик",
-        type: "Крупный пруд",
-        road: "🌾 Наезженная полевая дорога",
-        shore: "🎣 Много чистых мест под карповики",
-        boat: "🛶 Спуск надувной лодки с берега"
+        road: "🌾 Наезженная дорога",
+        shore: "🎣 Чистые карповые места",
+        boat: "🛶 Спуск с берега"
       }
     ];
+
+    const markersMap = {};
 
     defaultSpots.forEach(spot => {
       const lat = spot.coords[0];
@@ -492,29 +571,68 @@
           </div>
         </div>
       `;
-      L.marker([lat, lng]).addTo(map).bindPopup(popupHtml);
+
+      const m = L.marker([lat, lng]).addTo(map).bindPopup(popupHtml);
+      markersMap[spot.id] = m;
     });
 
-    // 6. Хранилище отчетов
+    // 4. Отрисовка нижней быстрой панели
+    function renderSpotsList(items) {
+      const list = document.getElementById('spotsList');
+      list.innerHTML = items.map(s => `
+        <div class="spot-chip" onclick="flyToSpot(${s.id}, ${s.coords[0]}, ${s.coords[1]})">
+          <div class="spot-chip-title">${s.name}</div>
+          <div class="spot-chip-desc">${s.fish}</div>
+        </div>
+      `).join('');
+    }
+
+    window.flyToSpot = function(id, lat, lng) {
+      map.flyTo([lat, lng], 14, { duration: 1.2 });
+      setTimeout(() => {
+        if (markersMap[id]) markersMap[id].openPopup();
+      }, 1200);
+    };
+
+    window.filterSpots = function(district, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (district === 'all') {
+        renderSpotsList(defaultSpots);
+      } else {
+        renderSpotsList(defaultSpots.filter(s => s.district === district));
+      }
+    };
+
+    renderSpotsList(defaultSpots);
+
+    // 5. Отчеты пользователей
+    const reportIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+
     let userReports = JSON.parse(localStorage.getItem('elan_fish_reports') || '[]');
     let userMarkersLayer = L.layerGroup().addTo(map);
 
     function renderUserReports() {
       userMarkersLayer.clearLayers();
-
       userReports.forEach((rep, idx) => {
         const popupHtml = `
           <div class="spot-card report">
-            <h3>📝 Отчет: ${rep.name}</h3>
+            <h3>📝 ${rep.name}</h3>
             <p><b>Дата:</b> ${rep.date || 'Не указана'} (${rep.district})</p>
-            <p><b>Улов / снасть:</b> ${rep.fish || 'Не указано'}</p>
+            <p><b>Улов:</b> ${rep.fish || 'Не указано'}</p>
             <div class="conditions-grid">
               <div class="cond-tag">${rep.road}</div>
               <div class="cond-tag">${rep.shore}</div>
               <div class="cond-tag">${rep.boat}</div>
             </div>
             ${rep.notes ? `<p><b>Заметки:</b> ${rep.notes}</p>` : ''}
-            <p><b>Координаты:</b> ${rep.lat.toFixed(5)}, ${rep.lng.toFixed(5)}</p>
             <div class="btn-group">
               <button class="btn btn-copy" onclick="copyCoords(${rep.lat}, ${rep.lng})">📋 Коорд.</button>
               <a class="btn btn-nav" href="https://yandex.ru/maps/?rtext=~${rep.lat},${rep.lng}&rtt=auto" target="_blank">Карты</a>
@@ -522,16 +640,12 @@
             </div>
           </div>
         `;
-
-        L.marker([rep.lat, rep.lng], { icon: reportIcon })
-          .addTo(userMarkersLayer)
-          .bindPopup(popupHtml);
+        L.marker([rep.lat, rep.lng], { icon: reportIcon }).addTo(userMarkersLayer).bindPopup(popupHtml);
       });
     }
 
     renderUserReports();
 
-    // 7. Управление окнами
     function openReportModal(lat = '', lng = '') {
       if (lat && lng) {
         document.getElementById('spotCoords').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -539,10 +653,7 @@
       document.getElementById('spotDate').value = new Date().toISOString().split('T')[0];
       document.getElementById('reportModal').classList.add('active');
     }
-
-    function closeReportModal() {
-      document.getElementById('reportModal').classList.remove('active');
-    }
+    function closeReportModal() { document.getElementById('reportModal').classList.remove('active'); }
 
     function openReportsList() {
       const container = document.getElementById('reportsContainer');
@@ -550,16 +661,11 @@
         container.innerHTML = '<p style="color:#888; font-size:13px; text-align:center; padding: 20px 0;">У вас пока нет сохраненных отчетов.</p>';
       } else {
         container.innerHTML = userReports.map((r, i) => `
-          <div class="report-item">
-            <h4>${r.name} (${r.district})</h4>
-            <div class="conditions-grid" style="margin: 6px 0;">
-              <div class="cond-tag">${r.road}</div>
-              <div class="cond-tag">${r.shore}</div>
-              <div class="cond-tag">${r.boat}</div>
-            </div>
-            <p style="font-size:12px; margin: 3px 0;"><b>Улов:</b> ${r.fish || '-'}</p>
-            <p style="font-size:11px; color:#aaa;">Дата: ${r.date || '-'} | Координаты: ${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</p>
-            <div class="btn-group" style="margin-top:8px;">
+          <div style="background:#1a1a1b; padding:10px; border-radius:8px; margin-bottom:8px; border:1px solid #333;">
+            <h4 style="color:#ff9e00; font-size:13px;">${r.name} (${r.district})</h4>
+            <p style="font-size:11px; color:#aaa; margin:3px 0;">${r.date || '-'} | ${r.lat.toFixed(4)}, ${r.lng.toFixed(4)}</p>
+            <p style="font-size:12px;"><b>Улов:</b> ${r.fish || '-'}</p>
+            <div class="btn-group" style="margin-top:6px;">
               <button class="btn btn-copy" onclick="copyCoords(${r.lat}, ${r.lng})">📋 Координаты</button>
               <button class="btn btn-del" onclick="deleteReport(${i})">Удалить</button>
             </div>
@@ -568,10 +674,7 @@
       }
       document.getElementById('listModal').classList.add('active');
     }
-
-    function closeListModal() {
-      document.getElementById('listModal').classList.remove('active');
-    }
+    function closeListModal() { document.getElementById('listModal').classList.remove('active'); }
 
     function saveFishingReport() {
       const name = document.getElementById('spotName').value.trim();
@@ -584,73 +687,44 @@
       const fish = document.getElementById('spotFish').value.trim();
       const notes = document.getElementById('spotNotes').value.trim();
 
-      if (!name) {
-        alert('Пожалуйста, введите название водоема.');
-        return;
-      }
-
+      if (!name) { alert('Введите название водоема'); return; }
       const parts = coordsRaw.split(/[,;\s]+/).map(p => parseFloat(p));
       if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) {
-        alert('Пожалуйста, укажите координаты корректно (например: 50.9392, 42.0628).');
-        return;
+        alert('Укажите корректные координаты'); return;
       }
 
-      userReports.push({
-        name,
-        district,
-        lat: parts[0],
-        lng: parts[1],
-        road,
-        shore,
-        boat,
-        date,
-        fish,
-        notes
-      });
-
+      userReports.push({ name, district, lat: parts[0], lng: parts[1], road, shore, boat, date, fish, notes });
       localStorage.setItem('elan_fish_reports', JSON.stringify(userReports));
       renderUserReports();
       closeReportModal();
-
-      document.getElementById('spotName').value = '';
-      document.getElementById('spotCoords').value = '';
-      document.getElementById('spotFish').value = '';
-      document.getElementById('spotNotes').value = '';
-
-      showToast('Отчет и характеристики сохранены!');
+      showToast('Отчет сохранен на карте!');
     }
 
     window.deleteReport = function(index) {
-      if (confirm('Удалить этот отчет?')) {
+      if (confirm('Удалить отчет?')) {
         userReports.splice(index, 1);
         localStorage.setItem('elan_fish_reports', JSON.stringify(userReports));
         renderUserReports();
         openReportsList();
-        showToast('Отчет удален');
       }
     };
 
-    // Клик по карте
     map.on('click', function(e) {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
-
-      L.popup()
-        .setLatLng(e.latlng)
-        .setContent(`
-          <div class="spot-card">
-            <h3>Выбранная точка</h3>
-            <p><b>Координаты:</b> ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
-            <div class="btn-group" style="flex-direction: column;">
-              <button class="btn btn-add-here" onclick="openReportModal(${lat}, ${lng})">📝 Записать отчет тут</button>
-              <div style="display:flex; gap:6px;">
-                <button class="btn btn-copy" onclick="copyCoords(${lat}, ${lng})">📋 Скопировать</button>
-                <a class="btn btn-nav" href="https://yandex.ru/maps/?rtext=~${lat},${lng}&rtt=auto" target="_blank">Маршрут</a>
-              </div>
+      L.popup().setLatLng(e.latlng).setContent(`
+        <div class="spot-card">
+          <h3>Точка на карте</h3>
+          <p><b>Координаты:</b> ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+          <div class="btn-group" style="flex-direction: column;">
+            <button class="btn btn-add-here" onclick="openReportModal(${lat}, ${lng})">📝 Записать отчет тут</button>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-copy" onclick="copyCoords(${lat}, ${lng})">📋 Скопировать</button>
+              <a class="btn btn-nav" href="https://yandex.ru/maps/?rtext=~${lat},${lng}&rtt=auto" target="_blank">Маршрут</a>
             </div>
           </div>
-        `)
-        .openOn(map);
+        </div>
+      `).openOn(map);
     });
   </script>
 </body>
